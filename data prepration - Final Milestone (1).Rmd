@@ -1,0 +1,192 @@
+---
+title: "Data Preparation - Final Milestone"
+output:
+  html_document:
+    df_print: paged
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE}
+library(readxl)
+library(keras)
+library(tensorflow)
+library(dplyr)
+library(magrittr)
+library(caret)
+```
+
+```{r}
+NonBilled <- read_excel("data/December Non-bill calls.xlsx", na = c("", "---"), col_types = "text")
+Billed <- read_excel("data/Invoiced December.xlsx", na = c("", "---"), col_types = "text")
+```
+
+## Combining files
+
+```{r}
+newdata <- rbind(NonBilled, Billed)
+glimpse(newdata)
+```
+
+## Cleaning Data
+
+```{r}
+newdata1<- c('SR Address Line 1','SR City', 'SR Status','Activity Status', 'Charges Status', 'SR Coverage Hours..11', 'Br Region Desc', 'Activity Facts Call Num', 'Br Area Desc', 'SR Coverage Hours..28','SR Contact Date','Cash Vendor & Consumable Contracts','Coverage Type','SR Serial Number','SR Site')
+newdata <- newdata %>% select(-newdata1)
+```
+
+```{r}
+char_to_factors <- c(
+  "Invoiced (Y/N)",
+  "Activity Type",
+  "Base Call YN",
+  "SR Type",
+  "SR Device",
+  "SR Owner (Q#)",
+  "Activity Trouble Code"
+)
+char_to_factors
+```
+
+```{r}
+newdata <- newdata %>% mutate_at(char_to_factors, factor)
+```
+
+```{r}
+call_text <-  use_series(newdata, `Call Text`)
+billing_notes <-  use_series(newdata, `Billing Notes`)
+```
+
+```{r}
+invoice <- newdata %>%
+  use_series("Invoiced (Y/N)") %>%
+  as.numeric() %>%
+  subtract(1) %>%
+  as.matrix()
+cat('Tensor dimentions:', dim(invoice))
+```
+
+##Encoding Step
+
+```{r}
+coff <- list( MAX_WORDS = 10000,MAX_LEN = 300)
+```
+
+
+```{r}
+lab <- newdata %>%
+  use_series("Invoiced (Y/N)") %>%
+  as.numeric() %>%
+  subtract(1) %>%
+  ifelse(("Invoiced (Y/N)" == "Y"),1) %>%
+  as.array()
+cat('Tensor dimentions:', dim(lab), "\n")
+
+```
+
+# SR Type
+```{r}
+type <- newdata %>%
+  use_series("SR Type") %>%
+  as.numeric() %>%
+  to_categorical() 
+cat('Tensor dimentions:', dim(type), "\n")
+```
+
+# SR Device
+```{r}
+device <- newdata %>%
+  use_series("SR Device") %>%
+  as.numeric() %>%
+  to_categorical() 
+cat('Tensor dimentions:', dim(device), "\n")
+```
+
+
+# Activity Type
+
+```{r}
+act_type <- newdata %>%
+  use_series("Activity Type") %>%
+  as.numeric() %>%
+  to_categorical() 
+cat('Tensor dimentions:', dim(act_type), "\n")
+```
+
+# Activity Trouble Code
+
+```{r}
+act_trbl_code <- newdata$`Activity Trouble Code`
+act_trbl_code <- as.factor(act_trbl_code) %>% 
+                        as.numeric() %>%
+                        to_categorical() 
+cat('Tensor dimentions:', dim(act_trbl_code), "\n")
+
+```
+
+# SR Owner
+
+```{r}
+sr_owner <- newdata %>%
+  use_series("SR Owner (Q#)") %>%
+  as.factor() %>%
+  as.numeric() %>%
+  to_categorical()
+cat('Tensor dimentions:', dim(sr_owner), "\n")
+
+```
+
+
+
+# Base Call YN
+
+```{r}
+base_call <- newdata %>%
+  use_series("Base Call YN") %>%
+  as.factor() %>%
+  as.numeric() %>%
+  to_categorical()
+cat('Tensor dimentions:', dim(base_call), "\n")
+
+```
+
+### Combining all categorical data in to one layer
+
+```{r}
+auxillaryLayer <- cbind(lab, type, device, act_type, act_trbl_code, base_call, sr_owner)
+cat('Tensor dimentions for the layer:', dim(auxillaryLayer), "\n")
+```
+
+
+##Encoding call text variable
+
+```{r}
+calltext <- newdata %>% select(`Call Text`)
+token1 <- keras::text_tokenizer(num_words = coff$MAX_WORDS) %>%
+  keras::fit_text_tokenizer(calltext$`Call Text`)
+seq1 <- texts_to_sequences(token1, calltext$`Call Text`)
+index1 <- token1$word_index
+cat("There're", length(index1), "unique words\n")
+calltext <- pad_sequences(seq1, maxlen = coff$MAX_LEN)
+cat("Tensor dimentions:", dim(calltext), "\n")
+```
+
+##Encoding Billing Notes variable
+
+```{r}
+billingnotes <- newdata %>% select(`Billing Notes`)
+token2 <- keras::text_tokenizer(num_words = coff$MAX_WORDS) %>%
+  keras::fit_text_tokenizer(billingnotes$`Billing Notes`)
+seq2 <- texts_to_sequences(token2, billingnotes$`Billing Notes`)
+index2 <- token2$word_index
+cat("There're", length(index2), "unique words\n")
+billingnotes <- pad_sequences(seq2, maxlen = coff$MAX_LEN)
+cat("Tensor dimentions:", dim(billingnotes), "\n")
+
+```
+
+```{r}
+save.image(file = "data_preparing_file.rda")
+save(newdata, coff,  calltext,lab, billingnotes, auxillaryLayer,invoice, file="data_preparation.RData")
+```

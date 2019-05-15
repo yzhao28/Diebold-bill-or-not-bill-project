@@ -1,0 +1,169 @@
+---
+title: "Test Data - Final Milestone"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(keras)
+library(tensorflow)
+library(dplyr)
+library(magrittr)
+library(caret)
+```
+
+```{r}
+TestFeb <- read_excel("data/February_Test_Date_Corrected.xlsx", na = c("", "---"), col_types = "text")
+
+```
+
+```{r}
+testdata = subset(TestFeb, select = c('Activity Type','Base Call YN','SR Type','SR Device','SR Owner (Q#)','Activity Trouble Code','Item Desc','Billing Notes','Call Text'))
+```
+
+
+```{r}
+char_to_factors <- c(
+  "Activity Type",
+  "Base Call YN",
+  "SR Type",
+  "SR Device",
+  "SR Owner (Q#)",
+  "Activity Trouble Code"
+)
+char_to_factors
+testdata <- testdata %>% mutate_at(char_to_factors, factor)
+```
+
+
+# SR Type
+```{r}
+type <- testdata %>%
+  use_series("SR Type") %>%
+  as.numeric() %>%
+  to_categorical() 
+cat('Tensor dimentions:', dim(type), "\n")
+```
+
+# SR Device
+```{r}
+device <- testdata %>%
+  use_series("SR Device") %>%
+  as.numeric() %>%
+  to_categorical() 
+cat('Tensor dimentions:', dim(device), "\n")
+```
+
+
+# Activity Type
+
+```{r}
+act_type <- testdata %>%
+  use_series("Activity Type") %>%
+  as.numeric() %>%
+  to_categorical() 
+cat('Tensor dimentions:', dim(act_type), "\n")
+```
+
+# Activity Trouble Code
+
+```{r}
+act_trbl_code <- testdata$`Activity Trouble Code`
+act_trbl_code <- as.factor(act_trbl_code) %>% 
+                        as.numeric() %>%
+                        to_categorical() 
+cat('Tensor dimentions:', dim(act_trbl_code), "\n")
+
+```
+
+# SR Owner
+
+```{r}
+sr_owner <- testdata %>%
+  use_series("SR Owner (Q#)") %>%
+  as.factor() %>%
+  as.numeric() %>%
+  to_categorical()
+cat('Tensor dimentions:', dim(sr_owner), "\n")
+
+```
+
+# Base Call YN
+
+```{r}
+base_call <- testdata %>%
+  use_series("Base Call YN") %>%
+  as.factor() %>%
+  as.numeric() %>%
+  to_categorical()
+cat('Tensor dimentions:', dim(base_call), "\n")
+
+```
+
+
+
+### Combining all categorical data in to one layer
+
+```{r}
+auxillaryLayer <- cbind(type, device, act_type, act_trbl_code, base_call, sr_owner)
+newaux <- cbind(auxillaryLayer,matrix(0,nrow =108873,ncol=15))
+
+cat('Tensor dimentions for the layer:', dim(newaux), "\n")
+```
+
+
+##Encoding call text variable
+
+```{r}
+calltext <- testdata %>% select(`Call Text`)
+token1 <- keras::text_tokenizer(num_words = coff$MAX_WORDS) %>%
+  keras::fit_text_tokenizer(calltext$`Call Text`)
+seq1 <- texts_to_sequences(token1, calltext$`Call Text`)
+index1 <- token1$word_index
+cat("There're", length(index1), "unique words\n")
+calltext <- pad_sequences(seq1, maxlen = coff$MAX_LEN)
+cat("Tensor dimentions:", dim(calltext), "\n")
+```
+
+##Encoding Billing Notes variable
+
+```{r}
+billingnotes <- testdata %>% select(`Billing Notes`)
+token2 <- keras::text_tokenizer(num_words = coff$MAX_WORDS) %>%
+  keras::fit_text_tokenizer(billingnotes$`Billing Notes`)
+seq2 <- texts_to_sequences(token2, billingnotes$`Billing Notes`)
+index2 <- token2$word_index
+cat("There're", length(index2), "unique words\n")
+billingnotes <- pad_sequences(seq2, maxlen = coff$MAX_LEN)
+cat("Tensor dimentions:", dim(billingnotes), "\n")
+
+```
+
+## Modeling part 
+
+```{r}
+pred_class<-model %>% predict(
+  x = list(calltext, billingnotes, newaux))
+class_probability  = as.numeric(pred_class >=0.5)
+write.csv(class_probability,'predicted3.csv', row.names = F)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

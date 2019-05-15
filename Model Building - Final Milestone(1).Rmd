@@ -1,0 +1,144 @@
+---
+title: "Data Preparation - Final Milestone"
+output: html_notebook
+---
+
+```{r setup, include=F}
+knitr::opts_chunk$set(
+  fig.path = "markdown_figs/model_building-"
+)
+load("data_preparation.RData")
+```
+
+```{r}
+library(caret)
+library(keras)
+library(dplyr)
+library(magrittr)
+```
+
+
+```{r}
+set.seed(100)
+train <- createDataPartition(
+  invoice,
+  p = 0.7,
+  list = F,
+  times = 1
+  )
+```
+
+```{r}
+calltext_train <- calltext[train,]
+calltext_val <- calltext[-train,]
+
+cat("Dimentions for Call Text", "\n")
+cat("  Train:      ", dim(calltext_train), "\n",
+" Validation:  ", dim(calltext_val))
+```
+
+```{r}
+billingnotes_train <- billingnotes[train,]
+billingnotes_val <- billingnotes[-train,]
+
+cat("Dimentions for Billing Notes", "\n")
+cat("  Train:       ", dim(billingnotes_train), "\n",
+" Validation:   ", dim(billingnotes_val))
+```
+
+```{r}
+auxillaryLayer_train <- auxillaryLayer[train,]
+auxillaryLayer_val <- auxillaryLayer[-train,]
+
+cat("Dimentions for Auxillary Layer", "\n")
+cat("  Train:       ", dim(auxillaryLayer_train), "\n",
+" Validation:   ", dim(auxillaryLayer_val))
+```
+
+```{r}
+invoice_train <- invoice[train,]
+invoice_val <- invoice[-train,]
+```
+
+##Creating The Input Layers
+
+```{r}
+calltext_layer <- layer_input(shape = c(coff$MAX_LEN),name = "calltext_layer")
+
+
+billingnotes_layer <- layer_input(shape = c(coff$MAX_LEN),name = "billingnotes_layer")
+
+
+auxiliarylayer_model <- layer_input(shape = c(dim(auxillaryLayer)[2]),name = "auxiliarylayer_model")
+```
+
+
+##Creating The Embedding layers
+
+```{r}
+calltext_embedding <- calltext_layer %>%
+  layer_embedding(input_dim = coff$MAX_WORDS,output_dim = 500,input_length = coff$MAX_LEN,name = "calltext_embedding") %>%
+  layer_flatten()
+
+
+billingnotes_embedding <- billingnotes_layer %>%
+  layer_embedding(input_dim = coff$MAX_WORDS,output_dim = 500,input_length = coff$MAX_LEN,name = "billingnotes_embedding") %>%
+  layer_flatten()
+```
+
+
+## Merging Input and Auxilary Layers
+
+```{r}
+main_output <- layer_concatenate(c(calltext_embedding, billingnotes_embedding, auxiliarylayer_model)) %>%
+  layer_dense(units = 64, activation = 'relu', kernel_regularizer = regularizer_l2(l = 0.01)) %>%
+  layer_dense(units = 64, activation = 'relu', kernel_regularizer = regularizer_l2(l = 0.01)) %>%
+  layer_dense(units = 64, activation = 'relu', kernel_regularizer = regularizer_l2(l = 0.01)) %>%
+  layer_dense(units = 64, activation = 'relu', kernel_regularizer = regularizer_l2(l = 0.01)) %>%
+  layer_dense(units = 64, activation = 'relu',kernel_regularizer = regularizer_l2(l = 0.01)) %>%
+  layer_dense(units = 1, activation = 'sigmoid', name = 'main_output')
+```
+
+
+## Building the Model
+
+```{r}
+model <- keras_model(
+  
+  inputs = c(calltext_layer, billingnotes_layer, auxiliarylayer_model),
+  outputs = main_output)
+
+model %>% compile(
+  
+  optimizer = 'rmsprop',
+  loss = 'binary_crossentropy',
+  metric = 'accuracy')
+
+summary(model)
+```
+
+```{r}
+ model %>% fit(
+  
+  x = list(calltext_train, billingnotes_train, auxillaryLayer_train),
+  y = invoice_train,
+  epochs = 5,
+  batch_size = 128,
+  validation_data = list(list(calltext_val, billingnotes_val, auxillaryLayer_val), invoice_val)
+  
+)
+  
+
+```
+
+
+```{r}
+ pred2<-model %>% predict(
+  x = list(calltext_val, billingnotes_val, auxillaryLayer_val))
+
+predicted2 = as.numeric(pred2 >=0.5)
+table(Actual=invoice_val,Predicted=predicted2)
+```
+
+
+
